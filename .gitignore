@@ -1,0 +1,6 @@
+dist/
+build/
+*.pkg
+*.exe
+*.app
+venv/
