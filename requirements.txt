@@ -1,0 +1,6 @@
+streamlit
+openai
+pandas
+whisper
+streamlit-webrtc
+av
