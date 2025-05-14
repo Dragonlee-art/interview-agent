@@ -4,3 +4,4 @@ pandas
 whisper
 streamlit-webrtc
 av
+fpdf
