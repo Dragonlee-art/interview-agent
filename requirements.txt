@@ -1,5 +1,4 @@
 streamlit
-# whisper  <-- 이 줄을 삭제하거나 주석 처리합니다.
 av
 pandas
 numpy
