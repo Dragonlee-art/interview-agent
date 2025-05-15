@@ -44,6 +44,8 @@ candidate = st.sidebar.text_input("지원자 이름", value=st.session_state.get
 # --- 면접 시작 준비 ---
 st.header("1️⃣ 면접 시작 준비")
 
+# 1. 면접 시작 준비 Expander 초기 상태 변경
+# '아이스브레이킹 멘트'는 기본값인 expanded=False 유지
 with st.expander("🧊 아이스브레이킹 멘트 (면접 시작용)", expanded=False):
     st.success("면접 분위기를 부드럽게 시작해보세요 🤝")
     st.markdown("""
@@ -117,7 +119,7 @@ with st.expander("🎯 좋은 면접 질문 만드는 법", expanded=False):
   이 질문이 지원자의 어떤 점을 파악하기 위한 질문인지 스스로 이해하고 있어야 합니다.
 """)
 
-with st.expander("🗣️ 면접 시작 시 안내 멘트", expanded=True):
+with st.expander("🗣️ 면접 시작 시 안내 멘트", expanded=False): # expanded=True -> expanded=False 로 변경
     st.success("👋 안녕하세요, 곧 면접을 시작하겠습니다. 아래 내용을 간단히 안내드릴게요.")
     st.markdown("""
 - 🎯 이번 면접은 **지원자의 경험과 직무 적합성**을 중심으로 진행됩니다.
@@ -134,8 +136,8 @@ with st.expander("🗣️ 면접 시작 시 안내 멘트", expanded=True):
 st.header("2️⃣ 질문 작성")
 # 질문 목록 초기화 (세션 상태 유지)
 if "questions" not in st.session_state:
-    # 3. 질문에 디폴트 질문 없이 공란으로 시작
-    st.session_state["questions"] = []
+    # 2. 질문 작성에 기본으로 필드 3개 정도 만들기
+    st.session_state["questions"] = ["", "", ""]
 
 # 각 질문에 대한 입력 필드 생성
 for i in range(len(st.session_state["questions"])):
@@ -146,7 +148,8 @@ for i in range(len(st.session_state["questions"])):
 # 질문 추가/삭제 버튼
 col_add, col_remove = st.columns([1, 1])
 with col_add:
-    if st.button("➕ 질문 추가"):
+    # 3. 질문 추가 버튼에 강조 표시 (빨간색 배경은 직접 지원되지 않아 이모지로 대체)
+    if st.button("✨ 질문 추가", key="add_question_button"): # 이모지 추가 및 고유 key 설정
         st.session_state["questions"].append("")
         # 새로운 질문에 대한 상태 초기화 (None 또는 빈 문자열)
         if "answer_segments" in st.session_state:
@@ -155,9 +158,9 @@ with col_add:
         st.rerun() # 상태 변경 후 새로고침
 
 with col_remove:
-    # 질문이 1개보다 많을 때만 삭제 버튼 활성화
-    if len(st.session_state["questions"]) > 0: # 질문이 0개일 때는 삭제 버튼 비활성화
-         if st.button("🗑️ 마지막 질문 삭제"):
+    # 질문이 0개일 때는 삭제 버튼 비활성화
+    if len(st.session_state["questions"]) > 0:
+         if st.button("🗑️ 마지막 질문 삭제", key="remove_question_button"): # 고유 key 설정
             removed_idx = len(st.session_state["questions"]) - 1
             st.session_state["questions"].pop()
             # 삭제된 질문과 관련된 상태(답변, 메모, 세그먼트)도 함께 정리
@@ -177,7 +180,20 @@ with col_remove:
 
 # --- 실시간 면접 진행 ---
 st.header("3️⃣ 실시간 면접 진행")
-st.info("💡 사이드바의 '🌐 오디오 스트림 연결됨' 상태를 확인하세요. 각 질문별 답변은 '녹음 시작' / '녹음 중지' 버튼으로 구분합니다.")
+# 4. 실시간 면접 진행 설명 추가
+st.info("""
+**🎤 면접 진행 방법 설명:**
+
+1.  먼저 아래 WebRTC 스트리머의 **'Start' (또는 '연결 시작') 버튼**을 클릭하여 전체 면접 오디오 스트림을 연결합니다. 사이드바에 **'🌐 오디오 스트림 연결됨'** 메시지가 뜨는지 확인하세요.
+2.  각 질문별 답변을 녹음할 때는 해당 질문 아래의 **'▶️ 답변 녹음 시작' 버튼**을 클릭합니다. 다른 답변이 녹음 중일 때는 버튼이 비활성화됩니다.
+3.  답변을 마친 후 **'⏹️ 답변 녹음 중지' 버튼**을 클릭하여 해당 답변의 녹음 구간을 확정합니다.
+4.  녹음이 완료되면 **'🎤 답변 음성 인식' 버튼**이 활성화됩니다. 이 버튼을 눌러 녹음된 답변을 텍스트로 변환합니다.
+5.  텍스트 변환 결과는 '지원자 답변' 텍스트 영역에 표시되며, 필요시 직접 수정할 수 있습니다. '면접관 메모' 영역에는 자유롭게 내용을 입력하세요.
+6.  모든 질문에 대해 2~5 단계를 반복합니다.
+7.  면접 종료 후 '결과 저장 및 기록 관리' 섹션에서 전체 내용을 Excel로 다운로드하거나 면접 기록으로 저장할 수 있습니다.
+""")
+
+
 st.warning("⚠️ 브라우저 탭/창을 닫거나 새로고침하면 녹음 중인 오디오 데이터는 유실됩니다.")
 
 
@@ -214,10 +230,12 @@ global_ctx = webrtc_streamer(
     # async_processing=True # 필요에 따라 오디오 처리를 비동기로 실행 (복잡한 처리 시 유용)
 )
 
+
 # 2. 위스퍼 모델 로드 완료 메시지 위치 이동
 # 사이드바에서 오디오 스트림 상태 메시지 바로 위로 이동
-if global_ctx and global_ctx.state:
-    st.sidebar.success("✅ Whisper 모델 로드 완료") # --> 위치 이동됨
+# global_ctx가 초기화된 후 상태 표시 블록 이전에 위치
+st.sidebar.success("✅ Whisper 모델 로드 완료") # --> 위치 이동됨
+
 
 # 전역 스트리머 상태 표시 (사이드바)
 # global_ctx와 global_ctx.state가 모두 존재할 때 상태 확인
@@ -230,8 +248,11 @@ if global_ctx and global_ctx.state:
         st.sidebar.warning("⏳ 오디오 스트림 연결 중...")
     # global_ctx 객체 자체가 아직 초기화되지 않았거나 state가 None인 경우
 else:
-    # global_ctx가 None일 때도 모델 로드 완료 메시지는 표시될 수 있도록 위로 옮김
-    st.sidebar.error("❌ 오디오 스트림 연결 안됨. 마이크 권한을 확인하거나 페이지 새로고침이 필요할 수 있습니다.")
+    # global_ctx가 None일 때 (아직 초기화 전) 상태 메시지
+    st.sidebar.warning("⏳ 오디오 스트림 초기화 중...") # 초기 상태 메시지 변경
+    # global_ctx가 초기화되었으나 연결 실패 상태일 때의 메시지
+    if global_ctx and not global_ctx.state: # 이 조건은 사실상 위의 else에 포함되지만 명시적으로 구분해볼 수도 있습니다.
+         st.sidebar.error("❌ 오디오 스트림 연결 실패. 마이크 권한을 확인하거나 페이지 새로고침이 필요할 수 있습니다.")
 
 
 # 답변 오디오 세그먼트 정보를 저장할 상태 (시작, 종료 프레임 인덱스 튜플 또는 None)
@@ -252,11 +273,12 @@ processor = global_ctx.audio_processor if global_ctx and global_ctx.audio_proces
 # 각 질문에 대해 반복하며 면접 진행 UI 생성
 # 질문 목록이 비어있으면 아래 루프는 실행되지 않음
 for idx, question in enumerate(st.session_state["questions"]):
-    # 질문 내용이 비어있으면 해당 질문 UI는 스킵
-    # if not question or not question.strip(): # 질문 목록이 공란으로 시작하므로 빈 질문은 그릴 필요 있음
-    #     continue
+    # 질문 내용이 비어있어도 필드는 보여줘야 하므로 스킵하지 않음
+    # if not question or not question.strip():
+    #     continue # 주석 처리 또는 삭제
 
-    st.subheader(f"❓ 질문 {idx+1}: {question if question.strip() else ' (질문 입력 필요)'}") # 질문 내용이 비어있으면 안내 문구 표시
+
+    st.subheader(f"❓ 질문 {idx+1}: {question if question.strip() else ' (질문 내용을 입력해주세요)'}") # 질문 내용이 비어있으면 안내 문구 표시
 
     # 질문별 답변, 메모 텍스트 영역의 상태 초기화 (필요 시)
     # key를 사용하여 세션 상태와 직접 연결
@@ -372,7 +394,8 @@ for idx, question in enumerate(st.session_state["questions"]):
     else:
          # 오디오 스트리머가 준비되지 않았거나 재생 중이 아닐 때 안내 메시지 표시
          # 질문 내용이 비어있지 않고, 스트리머가 준비 안되었을 때만 표시
-         if question.strip(): # 질문 내용이 있을 때만 이 경고 표시
+         # 질문 목록이 비어있을 때는 이 경고를 표시하지 않음
+         if len(st.session_state["questions"]) > 0: # 질문 목록에 질문이 있을 때만 표시
              st.warning("⚠ 오디오 스트림 연결을 기다리거나 사이드바에서 상태를 확인해 주세요.")
 
 
@@ -384,6 +407,7 @@ for idx, question in enumerate(st.session_state["questions"]):
     # interview_results 리스트는 현재 세션 상태 (각 텍스트 에어리어의 최종 값 포함)를 기반으로
     # 이 스크립트가 실행될 때마다 최신 내용으로 다시 채워집니다.
     # 이는 Excel 저장이나 기록 저장 시 최신 상태를 반영하게 합니다.
+    # 질문 내용이 비어있어도 빈 질문으로 결과에 포함 (삭제 시 재정렬 때문)
     interview_results.append({
         "질문번호": idx+1,
         "질문": question,
