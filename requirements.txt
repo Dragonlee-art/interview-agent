@@ -5,4 +5,5 @@ numpy
 soundfile
 streamlit-webrtc
 aiortc
-openai-whisper # <-- 이 줄을 추가합니다.
+openai-whisper
+xlsxwriter 
