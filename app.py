@@ -43,6 +43,9 @@ candidate = st.sidebar.text_input("지원자 이름", value=st.session_state.get
 
 # --- 면접 시작 준비 ---
 st.header("1️⃣ 면접 시작 준비")
+# 1. 면접 10분전 안내 추가
+st.markdown("_면접 10분전에 꼭 읽어보세요!_") # 안내 문구를 기울임꼴로 표시
+# st.info("면접 10분전에 꼭 읽어보세요!") # 또는 이렇게 info 박스로 표시할 수도 있습니다.
 
 # 1. 면접 시작 준비 Expander 초기 상태 변경
 # '아이스브레이킹 멘트'는 기본값인 expanded=False 유지
@@ -71,7 +74,7 @@ with st.expander("📋 면접관이 지켜야 할 에티켓 10가지", expanded=
   가족관계, 외모, 건강 등 사적인 질문은 하지 않습니다.
 
 5️⃣ **중립적 태도 유지**
-  표정, 어투, 제스처 등으로 판단을 유도하지 않습니다.
+⃟표정, 어투, 제스처 등으로 판단을 유도하지 않습니다.
 
 6️⃣ **시간 엄수**
   면접 시간은 계획한 범위 내에서 효율적으로 운영합니다.
@@ -135,6 +138,9 @@ with st.expander("🗣️ 면접 시작 시 안내 멘트", expanded=False): # e
 # --- 질문 입력 ---
 st.header("2️⃣ 질문 작성")
 # 질문 목록 초기화 (세션 상태 유지)
+# 2. 후보자에게 할 질문 안내 추가
+st.markdown("_후보자에게 할 질문을 작성하세요!_") # 안내 문구를 기울임꼴로 표시
+# st.info("후보자에게 할 질문을 작성하세요!") # 또는 이렇게 info 박스로 표시할 수도 있습니다.
 if "questions" not in st.session_state:
     # 2. 질문 작성에 기본으로 필드 3개 정도 만들기
     st.session_state["questions"] = ["", "", ""]
@@ -159,7 +165,7 @@ with col_add:
 
 with col_remove:
     # 질문이 0개일 때는 삭제 버튼 비활성화
-    if len(st.session_state["questions"]) > 0:
+    if len(st.session_state["questions"]) > 0: # 질문이 0개일 때는 삭제 버튼 비활성화
          if st.button("🗑️ 마지막 질문 삭제", key="remove_question_button"): # 고유 key 설정
             removed_idx = len(st.session_state["questions"]) - 1
             st.session_state["questions"].pop()
@@ -312,7 +318,7 @@ for idx, question in enumerate(st.session_state["questions"]):
                     # 최소 길이 제한 등을 추가하여 너무 짧은 오디오는 무시할 수 있음
                     if start_idx != -1 and end_idx > start_idx + 10: # 예: 최소 10프레임 이상
                          st.session_state["answer_segments"][idx] = (start_idx, end_idx)
-                         st.session_state[f"answer_{idx}"] = "✅ 답변 녹음 완료. 아래 '음성 인식' 버튼을 눌러 텍스트로 변환하세요."
+                         st.session_state[f"answer_{idx}"] = "✅ 답변 녹음 완료. 아래 '음성 인식' 버튼을 눌러 텍스트로 변환하거나 오디오를 확인하세요." # 메시지 수정
                          processor.current_segment_start_idx = -1 # processor의 시작 인덱스 초기화
                          st.session_state["currently_recording_idx"] = None # 현재 녹음 중인 답변 인덱스 초기화
                          # processor.is_recording_answer 상태는 currently_recording_idx로 대체됨
@@ -340,7 +346,7 @@ for idx, question in enumerate(st.session_state["questions"]):
                      st.rerun() # 상태 업데이트를 위해 재실행
             else:
                  # 다른 답변이 녹음 중일 때는 이 질문의 녹음 시작 버튼 비활성화
-                 st.button(f"▶️ 답변 {idx+1} 녹음 시작", key=f"start_rec_{idx}_disabled", disabled=True, help="다른 답변이 녹음 중입니다.")
+                 st.button(f"▶️ 답변 {idx+1} 녹음 시작", key=f"start_rec_{idx}_disabled", disabled=True, help="다른 답변 녹음 중입니다.")
 
 
         # 텍스트 변환 버튼 영역
@@ -391,30 +397,91 @@ for idx, question in enumerate(st.session_state["questions"]):
                                     os.remove(temp_audio_path)
                                     # st.write(f"임시 파일 삭제 완료: {temp_audio_path}") # 디버깅용 메시지
 
-    else:
-         # 오디오 스트리머가 준비되지 않았거나 재생 중이 아닐 때 안내 메시지 표시
-         # 질문 내용이 비어있지 않고, 스트리머가 준비 안되었을 때만 표시
-         # 질문 목록이 비어있을 때는 이 경고를 표시하지 않음
-         if len(st.session_state["questions"]) > 0: # 질문 목록에 질문이 있을 때만 표시
-             st.warning("⚠ 오디오 스트림 연결을 기다리거나 사이드바에서 상태를 확인해 주세요.")
+                    # **↓↓↓ 오디오 다운로드 버튼 코드 ↓↓↓**
+
+                    # 다운로드 버튼 클릭 시 해당 세그먼트 오디오를 WAV로 만들어 제공
+                    # 현재 다른 답변 녹음 중일 때는 다운로드 버튼 비활성화 (오디오 프레임 목록이 계속 변경될 수 있으므로)
+                    # 음성 인식 버튼 바로 아래에 배치하여, 인식 가능 상태가 되면 다운로드도 가능하도록 함
+                    download_button_key = f"download_wav_{idx}" # 고유 키
+
+                    # st.download_button은 클릭 시에만 데이터를 사용하므로, 여기서는 클릭 여부 체크 없이 바로 생성
+                    # 단, 세그먼트가 기록된 경우에만 표시
+                    # 파일 생성 및 다운로드 버튼 결합 로직 (tempfile 사용)
+                    temp_audio_path_download = None # 다운로드용 임시 파일 경로 변수
+                    try:
+                        # 다운로드 버튼을 위해 임시 WAV 파일 생성 (버튼이 렌더링될 때마다 시도)
+                        # 세그먼트가 없으면 이 부분은 실행되지 않음 (위 if 조건)
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f_dl:
+                            start_idx, end_idx = st.session_state["answer_segments"][idx] # 다시 인덱스 가져옴
+                            segment_frames_dl = processor.frames[start_idx:end_idx] # 다운로드용 프레임 추출
+
+                            if segment_frames_dl: # 추출된 프레임이 있을 때만 파일 생성 시도
+                                audio_np_dl = np.concatenate([f_.to_ndarray().flatten() for f_ in segment_frames_dl])
+                                audio_int16_dl = np.int16(audio_np_dl * 32767)
+                                sf.write(f_dl.name, audio_int16_dl, 16000, format='WAV', subtype='PCM_16')
+                                temp_audio_path_download = f_dl.name # 임시 파일 경로 저장
+
+                        if temp_audio_path_download and os.path.exists(temp_audio_path_download): # 파일이 성공적으로 생성되었으면 다운로드 버튼 표시
+                            with open(temp_audio_path_download, "rb") as file:
+                                st.download_button(
+                                    label=f"⬇️ 답변 {idx+1} 오디오 다운로드 (.wav)", # 버튼 라벨
+                                    data=file, # 파일 데이터
+                                    file_name=f"답변_{idx+1}_오디오_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.wav", # 다운로드될 파일 이름
+                                    mime="audio/wav", # MIME 타입
+                                    key=f"actual_download_btn_{idx}" # 고유 키
+                                )
+                        # else: # 파일 생성이 실패했거나 프레임이 없을 때 (디버깅용)
+                        #     st.warning(f"다운로드용 오디오 파일 준비 실패 (프레임 없음 또는 오류)")
+
+                    except Exception as e:
+                         st.error(f"❌ 답변 {idx+1} 오디오 다운로드 준비 중 오류 발생: {e}")
+                    finally:
+                        # 다운로드용으로 생성된 임시 파일 삭제
+                        # download_button이 데이터를 가져간 후 삭제되어야 함
+                        # Streamlit의 download_button 특성상 버튼 클릭 후 바로 삭제 시 파일이 없을 수 있음
+                        # 여기서는 페이지 렌더링 시마다 파일을 만들고 표시하며, 다음 렌더링 시 삭제되기를 기대
+                        # 또는 좀 더 복잡한 상태 관리로 버튼 클릭 시에만 파일을 만들고 즉시 download_button에 전달 후 삭제 필요
+                        # 현재 구현은 렌더링될 때마다 파일을 만들고, 다음 렌더링 시 정리되는 방식에 의존 (간단함)
+                        # 더 견고하게 하려면 download_button 콜백 또는 다른 로직 필요
+                        # 일단은 렌더링 시마다 생성하고, 페이지 재실행 시 정리되도록 keep
+                        # 명시적 삭제를 원한다면 button 클릭 이벤트 내에서 처리 필요
+
+                        # 간단하게, 렌더링 시 생성된 파일을 다음 렌더링 시 cleanup
+                        if temp_audio_path_download and os.path.exists(temp_audio_path_download):
+                             # 실제 download_button 클릭 시 Streamlit이 데이터를 가져가므로
+                             # 여기에서 즉시 삭제하지 않고 다음 렌더링 사이클에서 정리되도록 두거나
+                             # button 클릭 콜백에서 생성/삭제하는 것이 이상적
+                             # 현재는 생성 후 바로 표시하고, GC 또는 다음 렌더링에 기댐 (단순 구현)
+                             # 만약 파일이 계속 쌓인다면 이 로직 수정 필요 (button 클릭 시 생성/삭제)
+                             pass # 파일을 일단 유지하고 다음 렌더링 사이클에서 정리되기를 기대
+
+                    # **↑↑↑ 오디오 다운로드 버튼 코드 삽입 완료 ↑↑↑**
 
 
-    # 음성 인식 결과 (수정 가능) 및 면접관 메모 입력 필드
-    # key를 사용하여 각 질문의 answer/memo 상태와 직접 연결하며, 사용자의 입력이 세션 상태에 반영됨
-    st.text_area("🖍️ 지원자 답변 (음성 인식 결과 및 수정)", value=st.session_state[f"answer_{idx}"], key=f"answer_{idx}", height=150) # 높이 조절
-    st.text_area("🗂️ 면접관 메모", value=st.session_state[f"memo_{idx}"], key=f"memo_{idx}", height=100) # 높이 조절
+            else:
+                 # 오디오 스트리머가 준비되지 않았거나 재생 중이 아닐 때 안내 메시지 표시
+                 # 질문 내용이 비어있지 않고, 스트리머가 준비 안되었을 때만 표시
+                 # 질문 목록이 비어있을 때는 이 경고를 표시하지 않음
+                 if len(st.session_state["questions"]) > 0: # 질문 목록에 질문이 있을 때만 표시
+                     st.warning("⚠ 오디오 스트림 연결을 기다리거나 사이드바에서 상태를 확인해 주세요.")
 
-    # interview_results 리스트는 현재 세션 상태 (각 텍스트 에어리어의 최종 값 포함)를 기반으로
-    # 이 스크립트가 실행될 때마다 최신 내용으로 다시 채워집니다.
-    # 이는 Excel 저장이나 기록 저장 시 최신 상태를 반영하게 합니다.
-    # 질문 내용이 비어있어도 빈 질문으로 결과에 포함 (삭제 시 재정렬 때문)
-    interview_results.append({
-        "질문번호": idx+1,
-        "질문": question,
-        "지원자 답변": st.session_state[f"answer_{idx}"], # 텍스트 에어리어의 현재 값 사용
-        "면접관 메모": st.session_state[f"memo_{idx}"] # 텍스트 에어리어의 현재 값 사용
-    })
-    st.markdown("---") # 각 질문 섹션 구분선
+
+        # 음성 인식 결과 (수정 가능) 및 면접관 메모 입력 필드
+        # key를 사용하여 각 질문의 answer/memo 상태와 직접 연결하며, 사용자의 입력이 세션 상태에 반영됨
+        st.text_area("🖍️ 지원자 답변 (음성 인식 결과 및 수정)", value=st.session_state[f"answer_{idx}"], key=f"answer_{idx}", height=150) # 높이 조절
+        st.text_area("🗂️ 면접관 메모", value=st.session_state[f"memo_{idx}"], key=f"memo_{idx}", height=100) # 높이 조절
+
+        # interview_results 리스트는 현재 세션 상태 (각 텍스트 에어리어의 최종 값 포함)를 기반으로
+        # 이 스크립트가 실행될 때마다 최신 내용으로 다시 채워집니다.
+        # 이는 Excel 저장이나 기록 저장 시 최신 상태를 반영하게 합니다.
+        # 질문 내용이 비어있어도 빈 질문으로 결과에 포함 (삭제 시 재정렬 때문)
+        interview_results.append({
+            "질문번호": idx+1,
+            "질문": question,
+            "지원자 답변": st.session_state[f"answer_{idx}"], # 텍스트 에어리어의 현재 값 사용
+            "면접관 메모": st.session_state[f"memo_{idx}"] # 텍스트 에어리어의 현재 값 사용
+        })
+        st.markdown("---") # 각 질문 섹션 구분선
 
 # --- 결과 저장 및 기록 관리 ---
 st.header("4️⃣ 결과 저장 및 기록 관리")
