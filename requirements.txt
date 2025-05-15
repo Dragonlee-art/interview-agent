@@ -1,8 +1,9 @@
 streamlit
-whisper
+# whisper  <-- 이 줄을 삭제하거나 주석 처리합니다.
 av
 pandas
 numpy
 soundfile
 streamlit-webrtc
 aiortc
+openai-whisper # <-- 이 줄을 추가합니다.
