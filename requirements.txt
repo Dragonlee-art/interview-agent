@@ -1,7 +1,8 @@
 streamlit
-openai
-pandas
 whisper
-streamlit-webrtc
 av
-fpdf
+pandas
+numpy
+soundfile
+streamlit-webrtc
+aiortc
