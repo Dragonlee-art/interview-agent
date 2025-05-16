@@ -8,8 +8,8 @@ import os
 import numpy as np
 import soundfile as sf
 from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
-# import time # 현재 코드에서는 직접적인 시간 측정 대신 프레임 인덱스를 활용합니다.
-import io # BytesIO를 사용하기 위해 io 모듈을 가져옵니다.
+import io
+import librosa # <-- Add this import for resampling
 
 # --- Streamlit 페이지 설정 ---
 st.set_page_config(page_title="면접 Agent", layout="wide")
@@ -137,7 +137,6 @@ with st.expander("🗣️ 면접 시작 시 안내 멘트", expanded=False): # e
 
 # --- 질문 입력 ---
 st.header("2️⃣ 질문 작성")
-# 질문 목록 초기화 (세션 상태 유지)
 # 2. 후보자에게 할 질문 안내 추가
 st.markdown("_후보자에게 할 질문을 작성하세요!_") # 안내 문구를 기울임꼴로 표시
 # st.info("후보자에게 할 질문을 작성하세요!") # 또는 이렇게 info 박스로 표시할 수도 있습니다.
@@ -218,6 +217,7 @@ class GlobalRecorder(AudioProcessorBase):
              self.stream_start_frame_idx = len(self.frames)
 
         self.frames.append(frame)
+
         # 오디오 프레임을 가공 없이 그대로 반환 (여기서는 가공 필요 없음)
         return frame
 
@@ -226,14 +226,14 @@ class GlobalRecorder(AudioProcessorBase):
 global_ctx = webrtc_streamer(
     key="global_interview_audio_stream", # 단일 스트리머 고유 키
     mode=WebRtcMode.SENDONLY, # 오디오 데이터만 서버(Streamlit)로 보냄
-    audio_receiver_size=1024, # 오디오 리시버 버퍼 크기
+    audio_receiver_size=4096, # <-- 버퍼 크기를 좀 더 늘려봅니다.
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}, # STUN 서버 설정 (NAT 통과)
      media_stream_constraints={
         "audio": True, # 오디오 제약 조건을 브라우저 기본값에 맡김
         "video": False # 비디오 스트림은 사용하지 않음
     },
     audio_processor_factory=GlobalRecorder, # 커스텀 오디오 프로세서 연결
-    # async_processing=True # 필요에 따라 오디오 처리를 비동기로 실행 (복잡한 처리 시 유용)
+    async_processing=True
 )
 
 
@@ -279,12 +279,7 @@ processor = global_ctx.audio_processor if global_ctx and global_ctx.audio_proces
 # 각 질문에 대해 반복하며 면접 진행 UI 생성
 # 질문 목록이 비어있으면 아래 루프는 실행되지 않음
 for idx, question in enumerate(st.session_state["questions"]):
-    # 질문 내용이 비어있어도 필드는 보여줘야 하므로 스킵하지 않음
-    # if not question or not question.strip():
-    #     continue # 주석 처리 또는 삭제
-
-
-    st.subheader(f"❓ 질문 {idx+1}: {question if question.strip() else ' (질문 내용을 입력해주세요)'}") # 질문 내용이 비어있으면 안내 문구 표시
+    st.subheader(f"❓ 질문 {idx+1}: {question if question.strip() else ' (질문 내용을 입력해주세요)'}")
 
     # 질문별 답변, 메모 텍스트 영역의 상태 초기화 (필요 시)
     # key를 사용하여 세션 상태와 직접 연결
@@ -298,20 +293,12 @@ for idx, question in enumerate(st.session_state["questions"]):
 
     # 오디오 스트리머가 활성화되고 재생 중인 경우에만 녹음/텍스트 변환 컨트롤 표시
     if processor and global_ctx.state.playing:
-        # 현재 총 누적 오디오 프레임 수 (디버깅/정보용)
-        # st.write(f"🎵 현재 누적 오디오 프레임 수: {len(processor.frames)}")
-        # st.write(f"➡️ 현재 녹음 중인 답변 인덱스: {st.session_state['currently_recording_idx']}")
-
-
-        # 답변 녹음 시작/중지 버튼 영역
+        # 현재 이 질문에 대한 답변을 녹음 중인 경우
         with col_rec:
-            # 현재 이 질문에 대한 답변을 녹음 중인 경우
             if st.session_state["currently_recording_idx"] == idx:
                 # ▶️ 녹음 중지 버튼 표시
                 if st.button(f"⏹️ 답변 {idx+1} 녹음 중지", key=f"stop_rec_{idx}"):
                     end_idx = len(processor.frames) # 현재 시점의 누적 프레임 수를 종료 인덱스로
-
-                    # current_segment_start_idx는 녹음 시작 버튼 클릭 시 processor에 저장됨
                     start_idx = processor.current_segment_start_idx
 
                     # 유효한 세그먼트인지 확인 (시작 인덱스가 기록되었고 종료 인덱스보다 큰지)
@@ -321,7 +308,6 @@ for idx, question in enumerate(st.session_state["questions"]):
                          st.session_state[f"answer_{idx}"] = "✅ 답변 녹음 완료. 아래 '음성 인식' 버튼을 눌러 텍스트로 변환하거나 오디오를 확인하세요." # 메시지 수정
                          processor.current_segment_start_idx = -1 # processor의 시작 인덱스 초기화
                          st.session_state["currently_recording_idx"] = None # 현재 녹음 중인 답변 인덱스 초기화
-                         # processor.is_recording_answer 상태는 currently_recording_idx로 대체됨
                          st.success(f"✅ 질문 {idx+1} 답변 녹음이 중지되었습니다. 오디오 프레임: {start_idx} ~ {end_idx}")
                          st.rerun() # 상태 업데이트를 위해 재실행
                     else:
@@ -338,7 +324,6 @@ for idx, question in enumerate(st.session_state["questions"]):
                 # ▶️ 녹음 시작 버튼 표시 (현재 녹음 중인 답변이 없을 때만 활성화)
                  if st.button(f"▶️ 답변 {idx+1} 녹음 시작", key=f"start_rec_{idx}"):
                      # 현재 시점의 누적 프레임 수를 시작 인덱스로 기록
-                     # 실제 사용 시 processor.stream_start_frame_idx를 고려하여 오디오 세그먼트를 자르는 로직 보완 가능
                      processor.current_segment_start_idx = len(processor.frames)
                      st.session_state["currently_recording_idx"] = idx # 현재 녹음 중인 답변 인덱스 기록
                      st.session_state[f"answer_{idx}"] = "🎧 답변 녹음 중..." # 사용자에게 피드백
@@ -358,128 +343,132 @@ for idx, question in enumerate(st.session_state["questions"]):
                 is_transcribe_disabled = st.session_state["currently_recording_idx"] is not None
                 if st.button(f"🎤 답변 {idx+1} 음성 인식", key=f"transcribe_{idx}", disabled=is_transcribe_disabled, help="다른 답변 녹음 중에는 음성 인식을 할 수 없습니다." if is_transcribe_disabled else None):
                     start_idx, end_idx = st.session_state["answer_segments"][idx]
-                    # 실제 처리할 오디오 프레임 추출
-                    # processor.frames 리스트는 계속 누적되므로, 저장된 시작/종료 인덱스로 슬라이싱
                     segment_frames = processor.frames[start_idx:end_idx]
 
                     if not segment_frames:
-                         st.warning("⚠ 녹음된 오디오 프레임이 없습니다. 다시 녹음해 주세요.")
-                         st.session_state[f"answer_{idx}"] = "⚠ 오디오 프레임 부족 또는 오류."
+                        st.warning("⚠ 녹음된 오디오 프레임이 없습니다. 다시 녹음해 주세요.")
+                        st.session_state[f"answer_{idx}"] = "⚠ 오디오 프레임 부족 또는 오류."
                     else:
                         with st.spinner(f"🎙️ 질문 {idx+1} 답변 음성 인식 중..."):
-                            temp_audio_path = None # finally 블록에서 사용할 변수 초기화
+                            temp_audio_path = None
                             try:
-                                # 임시 파일에 WAV 형식으로 저장
-                                # delete=False로 설정하여 파일이 바로 삭제되지 않도록 함 (명시적 삭제 필요)
-                                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                                    # av.AudioFrame 리스트를 numpy 배열로 변환
-                                    # to_ndarray()는 float32 형식, flatten()으로 1차원 배열
-                                    audio_np = np.concatenate([f_.to_ndarray().flatten() for f_ in segment_frames])
-                                    # float32 오디오를 int16 PCM 형식으로 스케일링 변환
-                                    audio_int16 = np.int16(audio_np * 32767)
-                                    # soundfile을 사용하여 WAV 파일로 쓰기 (16kHz, 모노, 16비트 PCM)
-                                    sf.write(f.name, audio_int16, 16000, format='WAV', subtype='PCM_16')
-                                    temp_audio_path = f.name # 임시 파일 경로 저장
+                                # Determine the actual sample rate from the first frame
+                                # Assuming all frames have the same sample rate as the first.
+                                original_sample_rate = segment_frames[0].rate if segment_frames else 0
 
-                                # Whisper 모델로 음성 인식 수행
-                                result = model.transcribe(temp_audio_path, language="ko") # 한국어 지정
-                                # 인식된 텍스트 결과의 앞뒤 공백 제거 후 세션 상태에 저장
+                                # Convert frames to numpy array and handle stereo to mono
+                                audio_np_list = []
+                                for f_ in segment_frames:
+                                    data = f_.to_ndarray()
+                                    if f_.layout.name in ["stereo", "stereo_downmix"]:
+                                        audio_np_list.append(np.mean(data, axis=0)) # Downmix stereo to mono
+                                    else:
+                                        audio_np_list.append(data.flatten()) # Assume mono or handle other layouts as mono
+
+                                audio_np_combined = np.concatenate(audio_np_list)
+
+                                # Resample if necessary (Whisper requires 16kHz)
+                                target_sample_rate = 16000
+                                if original_sample_rate != target_sample_rate and original_sample_rate > 0:
+                                    # Ensure audio_np_combined is float type for librosa
+                                    audio_np_combined = audio_np_combined.astype(np.float32)
+                                    audio_final_for_whisper = librosa.resample(y=audio_np_combined, orig_sr=original_sample_rate, target_sr=target_sample_rate)
+                                    st.info(f"🎤 오디오를 {original_sample_rate}Hz에서 {target_sample_rate}Hz로 리샘플링했습니다.")
+                                else:
+                                    audio_final_for_whisper = audio_np_combined
+
+                                # Normalize and convert to int16 for WAV file
+                                if np.max(np.abs(audio_final_for_whisper)) > 0:
+                                    audio_final_for_whisper = audio_final_for_whisper / np.max(np.abs(audio_final_for_whisper))
+                                audio_int16 = np.int16(audio_final_for_whisper * 32767)
+
+                                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                                    sf.write(f.name, audio_int16, target_sample_rate, format='WAV', subtype='PCM_16')
+                                    temp_audio_path = f.name
+
+                                result = model.transcribe(temp_audio_path, language="ko")
                                 st.session_state[f"answer_{idx}"] = result["text"].strip()
                                 st.success(f"✅ 질문 {idx+1} 답변 음성 인식 완료!")
 
+                                # 🎧 디버깅: 오디오 파형과 수치 확인
+                                st.write("🔍 평균값:", np.mean(audio_final_for_whisper), "최댓값:", np.max(audio_final_for_whisper))
+                                st.line_chart(audio_final_for_whisper[:1000])
+
                             except Exception as e:
-                                # 음성 처리 중 오류 발생 시 오류 메시지 표시 및 상태 업데이트
-                                st.error(f"❌ 질문 {idx+1} 답변 음성 처리 중 오류 발생: {e}")
+                                st.error(f"❌ 질문 {idx+1} 음성 처리 오류: {e}")
                                 st.session_state[f"answer_{idx}"] = f"❌ 음성 처리 오류: {e}"
                             finally:
-                                # 임시 파일이 생성되었으면 삭제
                                 if temp_audio_path and os.path.exists(temp_audio_path):
                                     os.remove(temp_audio_path)
-                                    # st.write(f"임시 파일 삭제 완료: {temp_audio_path}") # 디버깅용 메시지
 
-                    # **↓↓↓ 오디오 다운로드 버튼 코드 ↓↓↓**
+                # --- Audio Download Button ---
+                # Downloader will also provide 16kHz resampled audio for consistency
+                temp_audio_path_download = None
+                try:
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f_dl:
+                        start_idx_dl, end_idx_dl = st.session_state["answer_segments"][idx]
+                        segment_frames_dl = processor.frames[start_idx_dl:end_idx_dl]
 
-                    # 다운로드 버튼 클릭 시 해당 세그먼트 오디오를 WAV로 만들어 제공
-                    # 현재 다른 답변 녹음 중일 때는 다운로드 버튼 비활성화 (오디오 프레임 목록이 계속 변경될 수 있으므로)
-                    # 음성 인식 버튼 바로 아래에 배치하여, 인식 가능 상태가 되면 다운로드도 가능하도록 함
-                    download_button_key = f"download_wav_{idx}" # 고유 키
+                        if segment_frames_dl:
+                            original_sample_rate_dl = segment_frames_dl[0].rate if segment_frames_dl else 0
 
-                    # st.download_button은 클릭 시에만 데이터를 사용하므로, 여기서는 클릭 여부 체크 없이 바로 생성
-                    # 단, 세그먼트가 기록된 경우에만 표시
-                    # 파일 생성 및 다운로드 버튼 결합 로직 (tempfile 사용)
-                    temp_audio_path_download = None # 다운로드용 임시 파일 경로 변수
-                    try:
-                        # 다운로드 버튼을 위해 임시 WAV 파일 생성 (버튼이 렌더링될 때마다 시도)
-                        # 세그먼트가 없으면 이 부분은 실행되지 않음 (위 if 조건)
-                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f_dl:
-                            start_idx, end_idx = st.session_state["answer_segments"][idx] # 다시 인덱스 가져옴
-                            segment_frames_dl = processor.frames[start_idx:end_idx] # 다운로드용 프레임 추출
+                            audio_np_list_dl = []
+                            for f_dl_frame in segment_frames_dl:
+                                data_dl = f_dl_frame.to_ndarray()
+                                if f_dl_frame.layout.name in ["stereo", "stereo_downmix"]:
+                                    audio_np_list_dl.append(np.mean(data_dl, axis=0))
+                                else:
+                                    audio_np_list_dl.append(data_dl.flatten())
 
-                            if segment_frames_dl: # 추출된 프레임이 있을 때만 파일 생성 시도
-                                audio_np_dl = np.concatenate([f_.to_ndarray().flatten() for f_ in segment_frames_dl])
-                                audio_int16_dl = np.int16(audio_np_dl * 32767)
-                                sf.write(f_dl.name, audio_int16_dl, 16000, format='WAV', subtype='PCM_16')
-                                temp_audio_path_download = f_dl.name # 임시 파일 경로 저장
+                            audio_np_combined_dl = np.concatenate(audio_np_list_dl)
 
-                        if temp_audio_path_download and os.path.exists(temp_audio_path_download): # 파일이 성공적으로 생성되었으면 다운로드 버튼 표시
-                            with open(temp_audio_path_download, "rb") as file:
-                                st.download_button(
-                                    label=f"⬇️ 답변 {idx+1} 오디오 다운로드 (.wav)", # 버튼 라벨
-                                    data=file, # 파일 데이터
-                                    file_name=f"답변_{idx+1}_오디오_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.wav", # 다운로드될 파일 이름
-                                    mime="audio/wav", # MIME 타입
-                                    key=f"actual_download_btn_{idx}" # 고유 키
-                                )
-                        # else: # 파일 생성이 실패했거나 프레임이 없을 때 (디버깅용)
-                        #     st.warning(f"다운로드용 오디오 파일 준비 실패 (프레임 없음 또는 오류)")
+                            # Resample to 16kHz for download as well, for consistency with transcription
+                            target_sample_rate_dl = 16000
+                            if original_sample_rate_dl != target_sample_rate_dl and original_sample_rate_dl > 0:
+                                audio_np_combined_dl = audio_np_combined_dl.astype(np.float32)
+                                audio_final_dl = librosa.resample(y=audio_np_combined_dl, orig_sr=original_sample_rate_dl, target_sr=target_sample_rate_dl)
+                            else:
+                                audio_final_dl = audio_np_combined_dl
 
-                    except Exception as e:
-                         st.error(f"❌ 답변 {idx+1} 오디오 다운로드 준비 중 오류 발생: {e}")
-                    finally:
-                        # 다운로드용으로 생성된 임시 파일 삭제
-                        # download_button이 데이터를 가져간 후 삭제되어야 함
-                        # Streamlit의 download_button 특성상 버튼 클릭 후 바로 삭제 시 파일이 없을 수 있음
-                        # 여기서는 페이지 렌더링 시마다 파일을 만들고 표시하며, 다음 렌더링 시 삭제되기를 기대
-                        # 또는 좀 더 복잡한 상태 관리로 버튼 클릭 시에만 파일을 만들고 즉시 download_button에 전달 후 삭제 필요
-                        # 현재 구현은 렌더링될 때마다 파일을 만들고, 다음 렌더링 시 정리되는 방식에 의존 (간단함)
-                        # 더 견고하게 하려면 download_button 콜백 또는 다른 로직 필요
-                        # 일단은 렌더링 시마다 생성하고, 페이지 재실행 시 정리되도록 keep
-                        # 명시적 삭제를 원한다면 button 클릭 이벤트 내에서 처리 필요
+                            if np.max(np.abs(audio_final_dl)) > 0:
+                                audio_final_dl = audio_final_dl / np.max(np.abs(audio_final_dl))
+                            audio_int16_dl = np.int16(audio_final_dl * 32767)
 
-                        # 간단하게, 렌더링 시 생성된 파일을 다음 렌더링 시 cleanup
-                        if temp_audio_path_download and os.path.exists(temp_audio_path_download):
-                             # 실제 download_button 클릭 시 Streamlit이 데이터를 가져가므로
-                             # 여기에서 즉시 삭제하지 않고 다음 렌더링 사이클에서 정리되도록 두거나
-                             # button 클릭 콜백에서 생성/삭제하는 것이 이상적
-                             # 현재는 생성 후 바로 표시하고, GC 또는 다음 렌더링에 기댐 (단순 구현)
-                             # 만약 파일이 계속 쌓인다면 이 로직 수정 필요 (button 클릭 시 생성/삭제)
-                             pass # 파일을 일단 유지하고 다음 렌더링 사이클에서 정리되기를 기대
+                            sf.write(f_dl.name, audio_int16_dl, target_sample_rate_dl, format='WAV', subtype='PCM_16')
+                            temp_audio_path_download = f_dl.name
 
-                    # **↑↑↑ 오디오 다운로드 버튼 코드 삽입 완료 ↑↑↑**
+                    if temp_audio_path_download and os.path.exists(temp_audio_path_download):
+                        with open(temp_audio_path_download, "rb") as file:
+                            st.download_button(
+                                label=f"⬇️ 답변 {idx+1} 오디오 다운로드 (.wav)",
+                                data=file,
+                                file_name=f"답변_{idx+1}_오디오_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.wav",
+                                mime="audio/wav",
+                                key=f"actual_download_btn_{idx}"
+                            )
+                except Exception as e:
+                     st.error(f"❌ 답변 {idx+1} 오디오 다운로드 준비 중 오류 발생: {e}")
+                finally:
+                    # Files created with delete=False will persist until process ends or manual cleanup.
+                    # This is necessary for st.download_button to work correctly.
+                    pass
 
 
             else:
                  # 오디오 스트리머가 준비되지 않았거나 재생 중이 아닐 때 안내 메시지 표시
-                 # 질문 내용이 비어있지 않고, 스트리머가 준비 안되었을 때만 표시
-                 # 질문 목록이 비어있을 때는 이 경고를 표시하지 않음
-                 if len(st.session_state["questions"]) > 0: # 질문 목록에 질문이 있을 때만 표시
+                 if len(st.session_state["questions"]) > 0:
                      st.warning("⚠ 오디오 스트림 연결을 기다리거나 사이드바에서 상태를 확인해 주세요.")
 
 
         # 음성 인식 결과 (수정 가능) 및 면접관 메모 입력 필드
-        # key를 사용하여 각 질문의 answer/memo 상태와 직접 연결하며, 사용자의 입력이 세션 상태에 반영됨
-        st.text_area("🖍️ 지원자 답변 (음성 인식 결과 및 수정)", value=st.session_state[f"answer_{idx}"], key=f"answer_{idx}", height=150) # 높이 조절
-        st.text_area("🗂️ 면접관 메모", value=st.session_state[f"memo_{idx}"], key=f"memo_{idx}", height=100) # 높이 조절
+        st.text_area("🖍️ 지원자 답변 (음성 인식 결과 및 수정)", value=st.session_state[f"answer_{idx}"], key=f"answer_{idx}", height=150)
+        st.text_area("🗂️ 면접관 메모", value=st.session_state[f"memo_{idx}"], key=f"memo_{idx}", height=100)
 
-        # interview_results 리스트는 현재 세션 상태 (각 텍스트 에어리어의 최종 값 포함)를 기반으로
-        # 이 스크립트가 실행될 때마다 최신 내용으로 다시 채워집니다.
-        # 이는 Excel 저장이나 기록 저장 시 최신 상태를 반영하게 합니다.
-        # 질문 내용이 비어있어도 빈 질문으로 결과에 포함 (삭제 시 재정렬 때문)
         interview_results.append({
             "질문번호": idx+1,
             "질문": question,
-            "지원자 답변": st.session_state[f"answer_{idx}"], # 텍스트 에어리어의 현재 값 사용
-            "면접관 메모": st.session_state[f"memo_{idx}"] # 텍스트 에어리어의 현재 값 사용
+            "지원자 답변": st.session_state[f"answer_{idx}"],
+            "면접관 메모": st.session_state[f"memo_{idx}"]
         })
         st.markdown("---") # 각 질문 섹션 구분선
 
@@ -494,7 +483,7 @@ with col_excel:
     df = pd.DataFrame(interview_results)
 
     # DataFrame을 Excel 파일 형식으로 메모리(BytesIO)에 저장
-    excel_output = io.BytesIO() # <-- io.BytesIO 사용
+    excel_output = io.BytesIO()
     # ExcelWriter를 사용하여 xlsx 형식으로 저장
     with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
         # DataFrame을 Excel 시트에 쓰기 (인덱스 제외)
@@ -553,7 +542,7 @@ with st.expander("📚 저장된 면접 기록 보기", expanded=False):
                  # 기록 요약 정보 표시 (get() 사용으로 키 오류 방지)
                  st.markdown(f"**🕒 일시:** {h.get('일시', 'N/A')}")
                  st.markdown(f"**🧑‍💼 지원자:** {h.get('지원자', 'N/A')} / **🏢 부서:** {h.get('부서', 'N/A')}")
-                 st.markdown(f"**👤 면접관:** {h.get('면접관', 'N/A')}")
+                 st.markdown(f"**👤 면접관:** {h.get(' 면접관', 'N/A')}")
 
             with col_hist_btn:
                  # 현재 이 기록의 상세 내용을 보고 있는 경우
