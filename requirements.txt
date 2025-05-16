@@ -7,3 +7,4 @@ streamlit-webrtc
 aiortc
 openai-whisper
 xlsxwriter 
+librosa
